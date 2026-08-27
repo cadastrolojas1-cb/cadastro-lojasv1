@@ -3072,7 +3072,9 @@
     if(c.dataAbertura){ document.getElementById("data_constituicao").value = c.dataAbertura; }
     if(c.logradouro){ document.getElementById("endereco_sede").value = c.logradouro; }
     if(c.numero && c.numero !== "S/N"){ document.getElementById("numero_sede").value = c.numero; }
-    if(c.complemento){ document.getElementById("complemento_sede").value = c.complemento.slice(0, 7); }
+    // Complemento: propositalmente NÃO é colado no Cadastro (o campo continua
+    // aparecendo no card "DADOS DO CNPJ" pra conferência, mas não sobrescreve
+    // o formulário — a extração vinha com ruído nesse campo).
     if(c.bairro){ document.getElementById("bairro_sede").value = c.bairro; }
     if(c.cep){ document.getElementById("cep_sede").value = c.cep; }
     if(c.municipio){
