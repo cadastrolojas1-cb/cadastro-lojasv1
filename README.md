@@ -1,0 +1,1 @@
+# cadastro-lojas2
