@@ -4406,6 +4406,27 @@ function arrayBufferToBase64(buffer){
   return btoa(binary);
 }
 
+// Cria um worker do Tesseract tentando usar o modelo de idioma HOSPEDADO
+// LOCALMENTE primeiro (pasta ./tessdata, ao lado deste arquivo html) — assim
+// não depende de baixar do CDN toda vez, o que evita variação de rede e
+// problemas em redes corporativas. Tenta nessa ordem:
+//   1) ./tessdata/por.traineddata.gz (formato comprimido, o mais comum)
+//   2) ./tessdata/por.traineddata    (formato sem compressão)
+//   3) CDN padrão do Tesseract.js (jsDelivr), se nenhum dos dois existir
+async function criarWorkerOcr(){
+  try{
+    return await Tesseract.createWorker('por', 1, { langPath: './tessdata', gzip: true });
+  }catch(gzErr){
+    console.warn('./tessdata/por.traineddata.gz não encontrado, tentando sem compressão:', gzErr);
+  }
+  try{
+    return await Tesseract.createWorker('por', 1, { langPath: './tessdata', gzip: false });
+  }catch(rawErr){
+    console.warn('./tessdata/por.traineddata não encontrado, baixando do CDN:', rawErr);
+  }
+  return await Tesseract.createWorker('por'); // fallback final: CDN padrão (jsDelivr)
+}
+
 // Pool de workers do Tesseract.js: cria alguns workers em paralelo (limitado
 // pelos núcleos disponíveis na máquina) e usa um "scheduler" pra distribuir as
 // páginas entre eles. Em vez de OCRizar uma página de cada vez, várias rodam
@@ -4421,7 +4442,7 @@ function getOcrScheduler(){
       const scheduler = Tesseract.createScheduler();
       await Promise.all(
         Array.from({ length: numWorkers }, async () => {
-          const worker = await Tesseract.createWorker('por'); // português
+          const worker = await criarWorkerOcr();
           scheduler.addWorker(worker);
         })
       );
