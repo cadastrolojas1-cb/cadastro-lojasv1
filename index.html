@@ -4341,6 +4341,7 @@ async function handleFile(file){
     // "consumir" o ArrayBuffer original internamente, então convertemos primeiro.
     lastPdfBase64 = arrayBufferToBase64(buffer);
     pdfDoc = await pdfjsLib.getDocument({ data: buffer }).promise;
+    preAquecerOcr(); // já vai iniciando os workers do Tesseract em paralelo, por via das dúvidas
     currentPage = 1;
     pageNav.style.display = 'flex';
     await renderPage(currentPage);
@@ -4405,14 +4406,38 @@ function arrayBufferToBase64(buffer){
   return btoa(binary);
 }
 
-// Worker do Tesseract.js, criado uma única vez e reaproveitado entre chamadas
-// (carregar o modelo de idioma toda hora seria lento e desnecessário).
-let ocrWorkerPromise = null;
-function getOcrWorker(){
-  if (!ocrWorkerPromise){
-    ocrWorkerPromise = Tesseract.createWorker('por'); // português
+// Pool de workers do Tesseract.js: cria alguns workers em paralelo (limitado
+// pelos núcleos disponíveis na máquina) e usa um "scheduler" pra distribuir as
+// páginas entre eles. Em vez de OCRizar uma página de cada vez, várias rodam
+// ao mesmo tempo — isso reduz bastante o tempo total em PDFs com várias
+// páginas (o gargalo do OCR é a CPU, não a rede).
+let ocrSchedulerPromise = null;
+function getOcrScheduler(){
+  if (!ocrSchedulerPromise){
+    ocrSchedulerPromise = (async () => {
+      // Deixa 1 núcleo livre pro resto da página não travar; no máximo 4
+      // workers (ganho marginal acima disso, e cada um consome memória).
+      const numWorkers = Math.min(4, Math.max(1, (navigator.hardwareConcurrency || 2) - 1));
+      const scheduler = Tesseract.createScheduler();
+      await Promise.all(
+        Array.from({ length: numWorkers }, async () => {
+          const worker = await Tesseract.createWorker('por'); // português
+          scheduler.addWorker(worker);
+        })
+      );
+      return scheduler;
+    })();
   }
-  return ocrWorkerPromise;
+  return ocrSchedulerPromise;
+}
+
+// Chamar isso assim que o PDF é carregado (antes de saber se vai precisar de
+// OCR), pra já ir baixando/iniciando os workers do Tesseract em paralelo com
+// o resto do processamento. Quando o OCR for realmente necessário, os workers
+// já estarão prontos — economiza o tempo de inicialização. Falha aqui é
+// silenciosa: se der erro, o OCR tenta de novo (e mostra o erro) na hora.
+function preAquecerOcr(){
+  getOcrScheduler().catch(()=>{});
 }
 
 // Roda OCR 100% no navegador (Tesseract.js/WebAssembly) sobre as páginas do
@@ -4423,24 +4448,33 @@ function getOcrWorker(){
 // maxPages: quantas páginas processar no máximo (OCR no navegador é mais lento)
 // onStatus: callback opcional pra mostrar o progresso página a página
 async function ocrPdfToText(doc, maxPages, onStatus){
-  const worker = await getOcrWorker();
+  const scheduler = await getOcrScheduler();
   const total = Math.min(doc.numPages, maxPages || doc.numPages);
-  let textoCompleto = '';
 
+  // 1) Renderiza todas as páginas primeiro (rápido — é só desenhar em canvas).
+  onStatus && onStatus(`Preparando ${total} página(s) para OCR`);
+  const canvases = [];
   for (let i = 1; i <= total; i++){
-    onStatus && onStatus(`Lendo página ${i} de ${total} (OCR)`);
     const page = await doc.getPage(i);
-    const viewport = page.getViewport({ scale: 2 }); // escala maior = OCR mais preciso
+    const viewport = page.getViewport({ scale: 1.5 }); // 1.5x: bom equilíbrio entre nitidez e velocidade
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-
-    const { data: { text } } = await worker.recognize(canvas);
-    textoCompleto += text + '\n';
+    canvases.push(canvas);
   }
 
-  return textoCompleto;
+  // 2) Manda todas de uma vez pro scheduler, que distribui entre os workers
+  // disponíveis e processa em paralelo (em vez de uma página de cada vez).
+  let concluidas = 0;
+  const resultados = await Promise.all(canvases.map(async (canvas) => {
+    const { data: { text } } = await scheduler.addJob('recognize', canvas);
+    concluidas++;
+    onStatus && onStatus(`Lendo página ${concluidas} de ${total} (OCR)`);
+    return text;
+  }));
+
+  return resultados.join('\n');
 }
 
 // Usado quando o PDF é uma digitalização/foto sem texto real: renderiza as
@@ -5015,6 +5049,7 @@ async function handleFileCnpj(file){
     const buffer = await file.arrayBuffer();
     lastPdfBase64Cnpj = arrayBufferToBase64(buffer);
     pdfDocCnpj = await pdfjsLib.getDocument({ data: buffer }).promise;
+    preAquecerOcr(); // já vai iniciando os workers do Tesseract em paralelo, por via das dúvidas
     currentPageCnpj = 1;
     pageNavCnpj.style.display = 'flex';
     await renderPageCnpj(currentPageCnpj);
