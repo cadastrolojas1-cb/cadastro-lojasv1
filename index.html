@@ -4406,25 +4406,41 @@ function arrayBufferToBase64(buffer){
   return btoa(binary);
 }
 
-// Cria um worker do Tesseract tentando usar o modelo de idioma HOSPEDADO
-// LOCALMENTE primeiro (pasta ./tessdata, ao lado deste arquivo html) — assim
-// não depende de baixar do CDN toda vez, o que evita variação de rede e
-// problemas em redes corporativas. Tenta nessa ordem:
-//   1) ./tessdata/por.traineddata.gz (formato comprimido, o mais comum)
-//   2) ./tessdata/por.traineddata    (formato sem compressão)
-//   3) CDN padrão do Tesseract.js (jsDelivr), se nenhum dos dois existir
+// Descobre se existe um modelo de OCR local (pasta ./tessdata) e em qual
+// formato, ANTES de tentar criar qualquer worker do Tesseract. Fazemos essa
+// checagem com um fetch nosso (HEAD) porque, se passarmos direto pro
+// Tesseract.js um caminho que não existe, o erro que ele gera não é
+// "pegável" com try/catch normal (aparece como um erro "Uncaught" vindo de
+// dentro do worker interno) — então é melhor conferir antes e nunca dar pra
+// ele um caminho que vá falhar.
+let formatoOcrLocalPromise = null;
+function detectarFormatoOcrLocal(){
+  if (!formatoOcrLocalPromise){
+    formatoOcrLocalPromise = (async () => {
+      const candidatos = [
+        { url: './tessdata/por.traineddata.gz', gzip: true },  // formato comprimido
+        { url: './tessdata/por.traineddata', gzip: false },    // formato sem compressão
+      ];
+      for (const c of candidatos){
+        try{
+          const resp = await fetch(c.url, { method: 'HEAD', cache: 'no-store' });
+          if (resp.ok){
+            return { langPath: './tessdata', gzip: c.gzip };
+          }
+        }catch(e){ /* ignora e tenta o próximo candidato */ }
+      }
+      return null; // nenhum modelo local encontrado — usa o CDN padrão
+    })();
+  }
+  return formatoOcrLocalPromise;
+}
+
+// Cria um worker do Tesseract usando o modelo local se ele existir (checado
+// previamente por detectarFormatoOcrLocal), ou o CDN padrão do Tesseract.js
+// caso contrário.
 async function criarWorkerOcr(){
-  try{
-    return await Tesseract.createWorker('por', 1, { langPath: './tessdata', gzip: true });
-  }catch(gzErr){
-    console.warn('./tessdata/por.traineddata.gz não encontrado, tentando sem compressão:', gzErr);
-  }
-  try{
-    return await Tesseract.createWorker('por', 1, { langPath: './tessdata', gzip: false });
-  }catch(rawErr){
-    console.warn('./tessdata/por.traineddata não encontrado, baixando do CDN:', rawErr);
-  }
-  return await Tesseract.createWorker('por'); // fallback final: CDN padrão (jsDelivr)
+  const formatoLocal = await detectarFormatoOcrLocal();
+  return Tesseract.createWorker('por', 1, formatoLocal || {});
 }
 
 // Pool de workers do Tesseract.js: cria alguns workers em paralelo (limitado
