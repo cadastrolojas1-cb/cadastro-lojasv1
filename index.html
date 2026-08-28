@@ -3950,18 +3950,27 @@
       renderFichaExtras();
     });
 
+    // Ordem e nome de exibição de cada documento, usados no nome do arquivo
+    // baixado/impresso — ex: "1 Cadastral_PJ_AMG - 55679006000129".
+    var DOC_ORDEM  = { ficha: 1, compromisso: 2, acelera: 3, wlcontrato: 4 };
+    var DOC_LABEL  = { ficha: "Cadastral_PJ", compromisso: "Compromisso", acelera: "Acelera", wlcontrato: "WL Correspondente" };
+
     function nomeArquivo(){
       var razaoRaw = (document.getElementById("razao_social").value || "").trim();
       var primeiraPalavra = (razaoRaw.split(/\s+/)[0] || "")
         .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, "");
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "");
 
       var cnpjDigits = (document.getElementById("cnpj").value || "").replace(/\D/g, "");
-      var tipoDoc = activeDoc === "ficha" ? "ficha_cadastral_pj" : activeDoc === "acelera" ? "termo_acelera" : activeDoc === "wlcontrato" ? "wl_contrato" : "compromisso";
+      var numero = DOC_ORDEM[activeDoc] || "";
+      var label = DOC_LABEL[activeDoc] || "Documento";
 
-      var partes = [tipoDoc, primeiraPalavra, cnpjDigits].filter(Boolean);
-      return partes.length ? partes.join("_") : TITULO_PADRAO;
+      var nome = numero ? (numero + " " + label) : label;
+      if (primeiraPalavra){ nome += "_" + primeiraPalavra; }
+      if (cnpjDigits){ nome += " - " + cnpjDigits; }
+
+      return nome || TITULO_PADRAO;
     }
 
     document.getElementById("btn-imprimir").addEventListener("click", function(){
