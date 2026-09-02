@@ -3072,9 +3072,8 @@
     if(c.dataAbertura){ document.getElementById("data_constituicao").value = c.dataAbertura; }
     if(c.logradouro){ document.getElementById("endereco_sede").value = c.logradouro; }
     if(c.numero && c.numero !== "S/N"){ document.getElementById("numero_sede").value = c.numero; }
-    // Complemento: propositalmente NÃO é colado no Cadastro (o campo continua
-    // aparecendo no card "DADOS DO CNPJ" pra conferência, mas não sobrescreve
-    // o formulário — a extração vinha com ruído nesse campo).
+    // Complemento não é mais extraído do Cartão CNPJ (o campo continua existindo
+    // no Cadastro pra preenchimento manual, se necessário).
     if(c.bairro){ document.getElementById("bairro_sede").value = c.bairro; }
     if(c.cep){ document.getElementById("cep_sede").value = c.cep; }
     if(c.municipio){
@@ -4829,7 +4828,6 @@ async function extractCnpjWithAI(fullText){
       atividadePrincipal: { type: 'string' },
       logradouro: { type: 'string' },
       numero: { type: 'string' },
-      complemento: { type: 'string' },
       cep: { type: 'string' },
       bairro: { type: 'string' },
       municipio: { type: 'string' },
@@ -4844,10 +4842,9 @@ async function extractCnpjWithAI(fullText){
 - atividadePrincipal: código e descrição da atividade econômica principal (ex: "45.11-1-02 - Comércio a varejo de automóveis...")
 - logradouro: nome da rua/avenida do endereço (sem o número)
 - numero: número do endereço
-- complemento: complemento do endereço — se o campo estiver preenchido só com asteriscos (********) ou vazio, retorne string vazia "", não null
 - cep: CEP SEM o ponto entre os dois primeiros dígitos (ex: "08022-000", não "08.022-000")
-- bairro: bairro/distrito
-- municipio: município
+- bairro: bairro/distrito (campo "BAIRRO/DISTRITO")
+- municipio: nome da cidade (campo "MUNICÍPIO", que fica na mesma linha do CEP, do bairro e da UF — não confundir com o bairro nem deixar de preencher só porque fica ao lado de outros campos)
 - uf: sigla do estado (2 letras)
 
 IMPORTANTE: se o texto/imagem estiver ilegível, incompleto ou não parecer claramente um Cartão CNPJ, retorne os campos correspondentes como null. NUNCA invente nome de empresa, número de CNPJ ou qualquer outro dado que não esteja claramente identificável no conteúdo fornecido — é preferível deixar null a arriscar um palpite.`;
@@ -5178,7 +5175,6 @@ const CNPJ_LABELS = {
   atividadePrincipal: /^C[ÓO]DIGO E DESCRI[ÇC][ÃA]O DA ATIVIDADE ECON[ÔO]MICA PRINCIPAL$/i,
   logradouro: /^LOGRADOURO$/i,
   numero: /^N[ÚU]MERO$/i, // "NÚMERO" sozinho — diferente de "NÚMERO DE INSCRIÇÃO"
-  complemento: /^COMPLEMENTO$/i,
   cep: /^CEP$/i,
   bairro: /^BAIRRO\/?DISTRITO$/i,
   municipio: /^MUNIC[ÍI]PIO$/i,
@@ -5211,7 +5207,6 @@ function parseCNPJ(rawText){
   const atividadePrincipal = valueAfterLabel(lines, CNPJ_LABELS.atividadePrincipal);
   const logradouro = valueAfterLabel(lines, CNPJ_LABELS.logradouro);
   const numero = valueAfterLabel(lines, CNPJ_LABELS.numero);
-  let complemento = valueAfterLabel(lines, CNPJ_LABELS.complemento);
   let cep = valueAfterLabel(lines, CNPJ_LABELS.cep);
   const bairro = valueAfterLabel(lines, CNPJ_LABELS.bairro);
   const municipio = valueAfterLabel(lines, CNPJ_LABELS.municipio);
@@ -5234,15 +5229,12 @@ function parseCNPJ(rawText){
     if (matches.length) uf = matches[matches.length - 1][1];
   }
 
-  // "********" no complemento significa "sem complemento" no formulário da Receita — deixamos em branco
-  if (complemento && /^\*+$/.test(complemento)) complemento = '';
-
   // CEP vem grafado como "08.022-000" — tira o ponto entre os dois primeiros dígitos
   if (cep) cep = cep.replace(/^(\d{2})\.(\d{3})/, '$1$2');
 
   return {
     numeroInscricao, nomeEmpresarial, dataAbertura, atividadePrincipal,
-    logradouro, numero, complemento, cep, bairro, municipio, uf
+    logradouro, numero, cep, bairro, municipio, uf
   };
 }
 
@@ -5252,11 +5244,6 @@ function renderResultsCnpj(d, rawText, source){
   const campo = (label, valor) => `
     <dt>${label}</dt>
     <dd class="${valor ? '' : 'missing'}">${valor ? escapeHtml(valor) : 'não localizado'}</dd>
-  `;
-  // complemento pode ser propositalmente vazio (não é "não localizado")
-  const campoComplemento = `
-    <dt>Complemento</dt>
-    <dd class="${(d.complemento === null || d.complemento === undefined) ? 'missing' : ''}">${(d.complemento === null || d.complemento === undefined) ? 'não localizado' : (d.complemento || '<span style="color:#9AA3AC;">(sem complemento)</span>')}</dd>
   `;
 
   const banner = source === 'ia'
@@ -5279,7 +5266,6 @@ function renderResultsCnpj(d, rawText, source){
         ${campo('Atividade principal', d.atividadePrincipal)}
         ${campo('Logradouro', d.logradouro)}
         ${campo('Número', d.numero)}
-        ${campoComplemento}
         ${campo('CEP', d.cep)}
         ${campo('Bairro/Distrito', d.bairro)}
         ${campo('Município', d.municipio)}
