@@ -4502,7 +4502,7 @@ async function ocrPdfToText(doc, maxPages, onStatus){
   const canvases = [];
   for (let i = 1; i <= total; i++){
     const page = await doc.getPage(i);
-    const viewport = page.getViewport({ scale: 1.5 }); // 1.5x: bom equilíbrio entre nitidez e velocidade
+    const viewport = page.getViewport({ scale: 2.2 }); // 2.2x: melhora a leitura de tabelas densas/letra pequena (ex: Cartão CNPJ)
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
@@ -4531,12 +4531,12 @@ async function renderPagesAsImageParts(doc, numPages){
   const parts = [];
   for (let i = 1; i <= numPages; i++){
     const page = await doc.getPage(i);
-    const viewport = page.getViewport({ scale: 1.5 });
+    const viewport = page.getViewport({ scale: 2.2 }); // mesma resolução do OCR — texto pequeno precisa disso pra não ficar ilegível
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-    const base64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+    const base64 = canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
     parts.push({ inlineData: { mimeType: 'image/jpeg', data: base64 } });
   }
   return parts;
@@ -4643,6 +4643,7 @@ async function callGeminiJSON(instructions, fullText, schema, docRef, rawBase64,
     if (docRef){
       try{
         textToUse = await ocrPdfToText(docRef, 6, onStatus);
+        console.debug(`[OCR] ${textToUse.replace(/\s/g,'').length} caracteres úteis extraídos. Prévia:`, textToUse.slice(0, 300));
       }catch(ocrErr){
         console.error('OCR falhou, usando modo imagem como último recurso:', ocrErr);
       }
@@ -4653,6 +4654,7 @@ async function callGeminiJSON(instructions, fullText, schema, docRef, rawBase64,
     // que ainda funcione mesmo se o serviço de OCR estiver fora do ar.
     if (textToUse.replace(/\s/g,'').length < 50 && docRef){
       imageMode = true;
+      console.debug('[OCR] Texto insuficiente — caindo pro modo imagem (páginas direto pro Gemini).');
       const imageParts = await renderPagesAsImageParts(docRef, Math.min(docRef.numPages, 6));
       parts = [
         ...imageParts,
@@ -4796,7 +4798,9 @@ Para cada sócio, extraia (deixe null quando a informação não existir, não i
 - cpf: CPF do sócio
 - rg: RG do sócio
 - quotas: número de quotas que ele detém
-- percentual: percentual de participação na sociedade (ex: "50%")`;
+- percentual: percentual de participação na sociedade (ex: "50%")
+
+IMPORTANTE: se o texto/imagem estiver ilegível, incompleto ou não parecer claramente um Contrato Social, retorne uma lista vazia de sócios em vez de inventar nomes, CPFs ou qualquer outro dado que não esteja claramente identificável no conteúdo fornecido.`;
 
   const parsed = await callGeminiJSON(
     instructions,
@@ -4838,7 +4842,9 @@ async function extractCnpjWithAI(fullText){
 - cep: CEP SEM o ponto entre os dois primeiros dígitos (ex: "08022-000", não "08.022-000")
 - bairro: bairro/distrito
 - municipio: município
-- uf: sigla do estado (2 letras)`;
+- uf: sigla do estado (2 letras)
+
+IMPORTANTE: se o texto/imagem estiver ilegível, incompleto ou não parecer claramente um Cartão CNPJ, retorne os campos correspondentes como null. NUNCA invente nome de empresa, número de CNPJ ou qualquer outro dado que não esteja claramente identificável no conteúdo fornecido — é preferível deixar null a arriscar um palpite.`;
 
   return callGeminiJSON(
     instructions,
