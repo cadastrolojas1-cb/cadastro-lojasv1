@@ -4367,7 +4367,7 @@ async function handleFile(file){
       try{
         const socioIA = await extractWithAI(fullText);
         progresso.finalizar();
-        renderResults(socioIA, fullText, 'ia');
+        renderResults(socioIA, socioIA.textoUsado || fullText, 'ia');
         hideStatus();
         return;
       }catch(err){
@@ -4625,7 +4625,7 @@ async function callGroqFallback(instructions, textToUse, schema){
 // rawBase64: mantido por compatibilidade com as chamadas existentes, mas não é
 // mais usado pro OCR (que agora roda sobre docRef, via Tesseract.js)
 // onStatus: callback opcional pra mostrar mensagens de progresso na tela
-async function callGeminiJSON(instructions, fullText, schema, docRef, rawBase64, onStatus){
+async function callGeminiJSON(instructions, fullText, schema, docRef, rawBase64, onStatus, onTextoResolvido){
   const apiKey = getApiKey();
   if (!WORKER_URL && !apiKey){
     apiKeyModal.classList.add('show');
@@ -4666,6 +4666,8 @@ async function callGeminiJSON(instructions, fullText, schema, docRef, rawBase64,
   if (!parts){
     parts = [{ text: instructions + `\n\nTexto do documento:\n"""\n${textToUse.slice(0, 60000)}\n"""` }];
   }
+
+  onTextoResolvido && onTextoResolvido(textToUse, imageMode);
 
   // O Google troca os nomes/versões dos modelos gratuitos com frequência — se um
   // não existir mais (404) tentamos o próximo da lista. Colocamos o modelo mais
@@ -4802,15 +4804,19 @@ Para cada sócio, extraia (deixe null quando a informação não existir, não i
 
 IMPORTANTE: se o texto/imagem estiver ilegível, incompleto ou não parecer claramente um Contrato Social, retorne uma lista vazia de sócios em vez de inventar nomes, CPFs ou qualquer outro dado que não esteja claramente identificável no conteúdo fornecido.`;
 
+  let textoUsado = fullText;
   const parsed = await callGeminiJSON(
     instructions,
     fullText,
     schema,
     typeof pdfDoc !== 'undefined' ? pdfDoc : null,
     lastPdfBase64,
-    (msg) => showStatus(msg, 'info')
+    (msg) => showStatus(msg, 'info'),
+    (texto) => { textoUsado = texto; }
   );
-  return (parsed.socios || []).filter(s => s.nome);
+  const socios = (parsed.socios || []).filter(s => s.nome);
+  socios.textoUsado = textoUsado; // texto real (OCR ou nativo) usado na extração — pro painel de conferência manual
+  return socios;
 }
 
 async function extractCnpjWithAI(fullText){
@@ -4846,14 +4852,18 @@ async function extractCnpjWithAI(fullText){
 
 IMPORTANTE: se o texto/imagem estiver ilegível, incompleto ou não parecer claramente um Cartão CNPJ, retorne os campos correspondentes como null. NUNCA invente nome de empresa, número de CNPJ ou qualquer outro dado que não esteja claramente identificável no conteúdo fornecido — é preferível deixar null a arriscar um palpite.`;
 
-  return callGeminiJSON(
+  let textoUsado = fullText;
+  const parsed = await callGeminiJSON(
     instructions,
     fullText,
     schema,
     typeof pdfDocCnpj !== 'undefined' ? pdfDocCnpj : null,
     lastPdfBase64Cnpj,
-    (msg) => showStatusCnpj(msg, 'info')
+    (msg) => showStatusCnpj(msg, 'info'),
+    (texto) => { textoUsado = texto; }
   );
+  parsed.textoUsado = textoUsado; // texto real (OCR ou nativo) usado na extração — pro painel de conferência manual
+  return parsed;
 }
 
 function cleanSpaces(s){
@@ -5019,7 +5029,7 @@ function wireAiButtons(rawText){
       tryAiBtn.textContent = '🤖 Lendo com IA…';
       try{
         const socios = await extractWithAI(lastExtractedText || rawText);
-        renderResults(socios, lastExtractedText || rawText, 'ia');
+        renderResults(socios, socios.textoUsado || lastExtractedText || rawText, 'ia');
       }catch(err){
         tryAiBtn.disabled = false;
         tryAiBtn.textContent = '🤖 Tentar com IA';
@@ -5119,7 +5129,7 @@ async function handleFileCnpj(file){
       try{
         const dadosIA = await extractCnpjWithAI(fullText);
         progressoCnpj.finalizar();
-        renderResultsCnpj(dadosIA, fullText, 'ia');
+        renderResultsCnpj(dadosIA, dadosIA.textoUsado || fullText, 'ia');
         hideStatusCnpj();
         return;
       }catch(err){
@@ -5290,7 +5300,7 @@ function renderResultsCnpj(d, rawText, source){
       tryAiBtnCnpj.textContent = '🤖 Lendo com IA…';
       try{
         const dadosIA = await extractCnpjWithAI(rawText);
-        renderResultsCnpj(dadosIA, rawText, 'ia');
+        renderResultsCnpj(dadosIA, dadosIA.textoUsado || rawText, 'ia');
       }catch(err){
         tryAiBtnCnpj.disabled = false;
         tryAiBtnCnpj.textContent = '🤖 Tentar de novo com IA';
