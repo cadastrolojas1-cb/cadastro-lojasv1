@@ -1068,6 +1068,13 @@
     @page wlpage{ size: A4; margin: 31mm 17.1mm 17.4mm 16.6mm; }
   }
 
+  /* Impressão de apenas o painel "Dados para preenchimento" (botão "Salvar PDF
+     essa tela") — sobrepõe a regra acima que esconde .panel na impressão. */
+  @media print{
+    body.print-tela-preencher .panel{ display: none !important; }
+    body.print-tela-preencher #painel-preencher-dados{ display: block !important; }
+  }
+
   /* ===== Extrator de Sócios (PDF + IA) embutido — CSS escopado dentro de #extrator-embed ===== */
 #extrator-embed{
     --bg: #F6F5F2;
@@ -1562,6 +1569,7 @@
     <div class="actions" style="margin:0; flex-direction:row; flex-wrap:wrap; align-items:center;">
       <button type="button" class="secondary" id="btn-gerar-xlsx" style="background:#E9F7EF; border-color:#9CC7A1; color:#1E7A4C;">📊 Gerar Input.xlsx</button>
       <button type="button" class="secondary" id="btn-limpar">Limpar campos</button>
+      <button type="button" class="secondary" id="btn-salvar-pdf-tela" title="Salva só os dados preenchidos nesta tela em PDF">🖨️ Salvar PDF essa tela</button>
     </div>
   </div>
 
@@ -1690,7 +1698,7 @@
 
   </div>
 
-  <section class="panel">
+  <section class="panel" id="painel-preencher-dados">
     <h2 style="text-align:center; margin-bottom:24px;">Dados para preenchimento</h2>
     <p class="sub" style="display:none;">Painel único: preencha aqui os dados da loja. Depois clique em "Gerar Formulários" no topo da página para conferir e imprimir o Termo de Compromisso ou a Ficha Cadastral PJ com esses dados já preenchidos.</p>
 
@@ -3947,6 +3955,17 @@
       saveFichaData();
       render();
       renderFichaExtras();
+    });
+
+    // Imprime/salva em PDF SÓ o painel "Dados para preenchimento" desta tela —
+    // esconde o resto da página (cabeçalho, abas, outros painéis) só durante a
+    // impressão, via a classe print-tela-preencher (ver regra @media print).
+    document.getElementById("btn-salvar-pdf-tela").addEventListener("click", function(){
+      document.body.classList.add("print-tela-preencher");
+      window.print();
+    });
+    window.addEventListener("afterprint", function(){
+      document.body.classList.remove("print-tela-preencher");
     });
 
     // Ordem e nome de exibição de cada documento, usados no nome do arquivo
