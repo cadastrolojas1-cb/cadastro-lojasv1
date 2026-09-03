@@ -3957,15 +3957,36 @@
       renderFichaExtras();
     });
 
+    // Nome sugerido pro PDF salvo a partir do botão "Salvar PDF essa tela" —
+    // mesmo padrão de nomeArquivo() (loja + CNPJ), mas sem numeração de
+    // documento, já que aqui é a tela de dados em si, não um dos formulários.
+    function nomeArquivoTela(){
+      var razaoRaw = (document.getElementById("razao_social").value || "").trim();
+      var primeiraPalavra = (razaoRaw.split(/\s+/)[0] || "")
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "");
+
+      var cnpjDigits = (document.getElementById("cnpj").value || "").replace(/\D/g, "");
+
+      var nome = "Dados_Preenchimento";
+      if (primeiraPalavra){ nome += "_" + primeiraPalavra; }
+      if (cnpjDigits){ nome += " - " + cnpjDigits; }
+
+      return nome;
+    }
+
     // Imprime/salva em PDF SÓ o painel "Dados para preenchimento" desta tela —
     // esconde o resto da página (cabeçalho, abas, outros painéis) só durante a
     // impressão, via a classe print-tela-preencher (ver regra @media print).
     document.getElementById("btn-salvar-pdf-tela").addEventListener("click", function(){
       document.body.classList.add("print-tela-preencher");
+      document.title = nomeArquivoTela();
       window.print();
     });
     window.addEventListener("afterprint", function(){
       document.body.classList.remove("print-tela-preencher");
+      document.title = TITULO_PADRAO;
     });
 
     // Ordem e nome de exibição de cada documento, usados no nome do arquivo
