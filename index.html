@@ -1506,6 +1506,8 @@
   .status-modal-box.blocked h2{ color:#C0392B; }
   .status-modal-box.blocked button{ border-color:#C0392B; background:#C0392B; }
 
+  @media print{ #salvarPdfModal{ display:none !important; } }
+
   body.cadastro-bloqueado .panel label,
   body.cadastro-bloqueado .panel input,
   body.cadastro-bloqueado .panel select,
@@ -1518,6 +1520,15 @@
 </style>
 </head>
 <body>
+
+<div class="status-modal-overlay" id="salvarPdfModal">
+  <div class="status-modal-box">
+    <div class="status-modal-icon">⚠️</div>
+    <h2>Atenção</h2>
+    <p>Sempre escolha a opção <strong>Salvar como PDF</strong>. Se o navegador estiver em inglês, escolha <strong>Save as PDF</strong>.</p>
+    <button type="button" id="salvarPdfOkBtn">Entendi, continuar</button>
+  </div>
+</div>
 
 <div class="status-modal-overlay" id="formCompletoModal">
   <div class="status-modal-box">
@@ -4012,7 +4023,7 @@
       return nome || TITULO_PADRAO;
     }
 
-    document.getElementById("btn-imprimir").addEventListener("click", function(){
+    function imprimirDocumentos(){
       setViewMode("documentos");
       document.title = nomeArquivo();
       sheetCompromissoEl.style.zoom = 1;
@@ -4020,6 +4031,24 @@
       sheetAceleraEl.style.zoom = 1;
       sheetWlcontratoEl.style.zoom = 1;
       window.print();
+    }
+
+    // Botão verde "Salvar PDF": antes de abrir a impressão, mostra o aviso
+    // pedindo para escolher "Salvar como PDF" / "Save as PDF".
+    var salvarPdfModalEl = document.getElementById("salvarPdfModal");
+    document.getElementById("btn-imprimir").addEventListener("click", function(){
+      salvarPdfModalEl.classList.add("show");
+    });
+    document.getElementById("salvarPdfOkBtn").addEventListener("click", function(){
+      salvarPdfModalEl.classList.remove("show");
+      imprimirDocumentos();
+    });
+    // Clicar fora da caixa (ou Esc) fecha o aviso sem imprimir
+    salvarPdfModalEl.addEventListener("click", function(e){
+      if(e.target === salvarPdfModalEl){ salvarPdfModalEl.classList.remove("show"); }
+    });
+    document.addEventListener("keydown", function(e){
+      if(e.key === "Escape"){ salvarPdfModalEl.classList.remove("show"); }
     });
 
     window.addEventListener("afterprint", function(){
