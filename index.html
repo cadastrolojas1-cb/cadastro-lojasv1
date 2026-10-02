@@ -362,6 +362,21 @@
     margin-top: 2px;
   }
   .add-row-btn:hover{ background: rgba(46,158,143,.08); }
+  /* Checkbox "Usar os mesmos dados do Representante Legal" */
+  .same-rep-box{
+    display:flex; align-items:center; gap:10px;
+    margin: 0 0 12px; padding: 9px 12px;
+    background:#fff; border:1px solid var(--navy); border-radius:8px;
+    font-size:13.5px; font-weight:500; color:var(--ink);
+    cursor:pointer; user-select:none;
+  }
+  .same-rep-box input[type=checkbox]{
+    width:18px; height:18px; margin:0; flex:0 0 auto;
+    accent-color: var(--navy); cursor:pointer;
+  }
+  .same-rep-box.is-disabled{ opacity:.55; cursor:not-allowed; }
+  .same-rep-box.is-disabled input[type=checkbox]{ cursor:not-allowed; }
+  @media print{ .same-rep-box{ display:none !important; } }
   .remove-row-btn{
     background: none;
     border: none;
@@ -2023,6 +2038,7 @@
 
       <fieldset>
         <legend>Correspondente Bancário</legend>
+        <label class="same-rep-box"><input type="checkbox" class="same-rep-check" data-destino="corresp"> Usar os mesmos dados do Representante Legal</label>
         <div class="row2">
           <div class="field">
             <label for="corresp_nome">Nome Corresp. Banc.</label>
@@ -2111,12 +2127,14 @@
       <fieldset>
         <legend>Administração da empresa e/ou procuradores</legend>
         <p class="sub" style="margin-top:-6px;">Em "I/C", indique "I" (assina isoladamente) ou "C" (assina em conjunto).</p>
+        <label class="same-rep-box"><input type="checkbox" class="same-rep-check" data-destino="administracao"> Usar os mesmos dados do Representante Legal</label>
         <div id="linhas-administracao"></div>
         <button type="button" class="add-row-btn" data-tabela="administracao">+ Adicionar</button>
       </fieldset>
 
       <fieldset>
         <legend>Principais acionistas</legend>
+        <label class="same-rep-box"><input type="checkbox" class="same-rep-check" data-destino="acionistas"> Usar os mesmos dados do Representante Legal</label>
         <div id="linhas-acionistas"></div>
         <button type="button" class="add-row-btn" data-tabela="acionistas">+ Adicionar</button>
       </fieldset>
@@ -3829,6 +3847,119 @@
       document.getElementById("repr_nome").addEventListener("input", preencherAdminComRepresentante);
       document.getElementById("repr_cpf").addEventListener("input", preencherAdminComRepresentante);
       preencherAdminComRepresentante();
+    })();
+
+    // Checkbox "Usar os mesmos dados do Representante Legal" (Correspondente
+    // Bancário, Administração e Principais acionistas). O estado do checkbox
+    // reflete se o representante (Nome/CPF) já está no destino: marcar copia,
+    // desmarcar remove o que foi copiado.
+    (function(){
+      var checks = document.querySelectorAll(".same-rep-check");
+      var nomeRepEl = document.getElementById("repr_nome");
+      var cpfRepEl = document.getElementById("repr_cpf");
+
+      function soDig(t){ return (t || "").replace(/\D/g, ""); }
+      function norm(t){ return (t || "").trim().toLowerCase(); }
+      function getRep(){ return { nome: nomeRepEl.value.trim(), cpf: cpfRepEl.value.trim() }; }
+      function repPreenchido(){ var r = getRep(); return !!(r.nome || r.cpf); }
+
+      function linhaEhRep(l, r){
+        if(soDig(r.cpf)){ return soDig(l.cpf) === soDig(r.cpf); }
+        return !!r.nome && norm(l.nome) === norm(r.nome);
+      }
+      function correspEhRep(r){
+        var n = document.getElementById("corresp_nome");
+        var c = document.getElementById("corresp_cpf");
+        return (!r.nome || norm(n.value) === norm(r.nome)) &&
+               (!soDig(r.cpf) || soDig(c.value) === soDig(r.cpf));
+      }
+      function destinoTemRep(destino){
+        var r = getRep();
+        if(destino === "corresp"){ return correspEhRep(r); }
+        return fichaData[destino].some(function(l){ return linhaEhRep(l, r); });
+      }
+
+      function atualizarEstado(){
+        var ok = repPreenchido();
+        checks.forEach(function(cb){
+          var box = cb.parentNode;
+          cb.disabled = !ok;
+          cb.checked = ok && destinoTemRep(cb.getAttribute("data-destino"));
+          box.classList.toggle("is-disabled", !ok);
+          box.title = ok ? "" : "Preencha o representante legal primeiro";
+        });
+      }
+
+      function setCorresp(nome, cpf){
+        var n = document.getElementById("corresp_nome");
+        var c = document.getElementById("corresp_cpf");
+        n.value = nome; c.value = cpf;
+        n.dispatchEvent(new Event("input", { bubbles: true }));
+        c.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+
+      function marcar(cb, destino){
+        var r = getRep();
+        if(destino === "corresp"){
+          var n = document.getElementById("corresp_nome");
+          var c = document.getElementById("corresp_cpf");
+          if((n.value.trim() || c.value.trim()) &&
+             !confirm("Substituir o correspondente atual pelos dados do representante legal?")){
+            cb.checked = false; return;
+          }
+          setCorresp(r.nome, r.cpf);
+          return;
+        }
+        // Administração / Acionistas: nunca sobrescreve — usa a 1ª linha vazia ou cria uma nova.
+        var linhas = fichaData[destino];
+        var alvo = null;
+        for(var i = 0; i < linhas.length; i++){
+          if(!(linhas[i].nome || "").trim() && !(linhas[i].cpf || "").trim()){ alvo = linhas[i]; break; }
+        }
+        if(!alvo){
+          alvo = destino === "acionistas" ? {nome:"",cpf:"",pct:"",ic:""} : {nome:"",cpf:"",ic:""};
+          linhas.push(alvo);
+        }
+        alvo.nome = r.nome;
+        alvo.cpf = r.cpf;
+        atualizarTabela(destino);
+      }
+
+      function desmarcar(destino){
+        var r = getRep();
+        if(destino === "corresp"){ setCorresp("", ""); return; }
+        var linhas = fichaData[destino];
+        for(var i = linhas.length - 1; i >= 0; i--){
+          if(!linhaEhRep(linhas[i], r)){ continue; }
+          var semOutrosDados = !(linhas[i].ic || "").trim() && !(linhas[i].pct || "").trim();
+          if(semOutrosDados && linhas.length > 1){ linhas.splice(i, 1); }
+          else { linhas[i].nome = ""; linhas[i].cpf = ""; }
+        }
+        atualizarTabela(destino);
+      }
+
+      function atualizarTabela(tabela){
+        saveFichaData();
+        renderFichaFormTabela(tabela);
+        renderFichaTabelaSaida(tabela);
+        updateStatus(currentData());
+      }
+
+      checks.forEach(function(cb){
+        cb.addEventListener("change", function(){
+          var destino = cb.getAttribute("data-destino");
+          if(!repPreenchido()){ cb.checked = false; return; }
+          if(cb.checked){ marcar(cb, destino); } else { desmarcar(destino); }
+          atualizarEstado();
+        });
+      });
+
+      // Mantém o checkbox em dia com qualquer alteração (digitação, extração, linhas novas/removidas).
+      ["input", "change", "click"].forEach(function(ev){
+        document.addEventListener(ev, function(){ setTimeout(atualizarEstado, 0); });
+      });
+      setInterval(atualizarEstado, 1000);
+      atualizarEstado();
     })();
 
     document.getElementById("link-extrator").addEventListener("click", function(e){
