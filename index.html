@@ -1064,6 +1064,13 @@
       break-after: avoid;
       page-break-after: avoid;
     }
+    /* Ficha Cadastral PJ: na tela a folha tem 297mm (A4), mas a impressão é em
+       Letter (279mm). Sem esta regra o excesso gerava uma 2ª folha em branco. */
+    .sheet[data-doc="ficha"]{
+      min-height: 0 !important;
+      break-after: avoid;
+      page-break-after: avoid;
+    }
     @page{ size: letter; margin: 0; }
     @page wlpage{ size: A4; margin: 31mm 17.1mm 17.4mm 16.6mm; }
   }
